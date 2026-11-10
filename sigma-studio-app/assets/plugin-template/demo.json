@@ -1,0 +1,5 @@
+[
+ {"label":"Item 1001","group":"North","elapsed":12,"remaining":-3,"value":84000},
+ {"label":"Item 1002","group":"South","elapsed":4,"remaining":10,"value":42000},
+ {"label":"Item 1003","group":"West","elapsed":9,"remaining":2,"value":120000}
+]

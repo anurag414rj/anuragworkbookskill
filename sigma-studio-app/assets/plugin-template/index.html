@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Studio View</title>
+<!-- Pin a version from Sigma's plugin docs, e.g. https://unpkg.com/@sigmacomputing/plugin@<version> -->
+<script src="https://unpkg.com/@sigmacomputing/plugin"></script>
+<style>
+  /* Brand: replace these four with the studio tokens */
+  :root{--ink:#252423;--muted:#6f6b67;--accent:#efff92;--second:#b9b3e0;--red:#d0543c;--hair:#e7e5ef}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;background:#fff;color:var(--ink);overflow:hidden}
+  #wrap{height:100%;display:flex;flex-direction:column;padding:12px 14px}
+  .top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+  .ttl{font-weight:700;font-size:14px}.sub{font-size:11px;color:var(--muted)}
+  #rows{flex:1;overflow-y:auto}
+  .row{display:grid;grid-template-columns:180px 1fr 90px;gap:10px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--hair)}
+  .row.flag{background:rgba(208,84,60,.06)}
+  .nm{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta{font-size:10.5px;color:var(--muted)}
+  .num{font-size:12px;font-weight:600;text-align:right}
+  svg{display:block;width:100%;height:16px}
+  body.dark{background:transparent;color:#fff}
+  body.dark .sub,body.dark .meta{color:#b3aea8}
+  body.dark .row{border-bottom-color:rgba(255,255,255,.08)}
+  body.dark #wrap{padding:6px 4px}
+  body.dark .top{display:none}   /* the Sigma band above already carries the title and caption */
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div class="top"><div><div class="ttl" id="ttl">Studio view</div><div class="sub">Sorted by what a day of delay costs</div></div></div>
+  <div id="rows"></div>
+</div>
+<script>
+(function(){
+  var Q = location.search || '', DARK = /dark/.test(Q), DEMO = /demo/.test(Q);
+  if (DARK) document.body.classList.add('dark');
+  // The SDK global differs between builds; check both.
+  var client = (window.sigmaComputing && window.sigmaComputing.plugin && window.sigmaComputing.plugin.client)
+            || (window.SigmaPlugin && window.SigmaPlugin.client) || null;
+
+  // 1 · Fields the view needs. Each becomes an editor-panel column picker in live mode,
+  //     and a key in demo.json rows in snapshot mode.
+  var COLUMNS = ['label', 'group', 'elapsed', 'remaining', 'value'];
+  // Sort order the persona works in: least time left first (overdue on top), then by value.
+  function SORT(a, b){ return (a.remaining - b.remaining) || (b.value - a.value); }
+  if (client && !DEMO) {
+    client.config.configureEditorPanel([{name: 'source', type: 'element'}].concat(
+      COLUMNS.map(function(k){ return {name: k, type: 'column', source: 'source', allowMultiple: false}; })));
+  }
+
+  var rowsEl = document.getElementById('rows'), last = null;
+  function num(v){ var n = Number(v); return isFinite(n) ? n : 0; }
+  function money(v){ return v >= 1e6 ? '$' + (v/1e6).toFixed(1) + 'M' : v >= 1e3 ? '$' + Math.round(v/1e3) + 'K' : '$' + Math.round(v); }
+
+  // 2 · The drawing. Replace with the domain view (lanes, plan view, flow, radar...).
+  function render(rows){
+    last = rows;
+    rows = rows.slice().sort(function(a, b){ return SORT(a, b); });
+    var max = Math.max.apply(null, rows.map(function(r){ return Math.max(r.elapsed, r.elapsed + r.remaining); }).concat([1]));
+    rowsEl.innerHTML = rows.map(function(r){
+      var e = 100 * r.elapsed / max, t = 100 * Math.max(r.elapsed, r.elapsed + r.remaining) / max, flag = r.remaining <= 0;
+      return '<div class="row' + (flag ? ' flag' : '') + '"><div><div class="nm">' + r.label + '</div><div class="meta">' + r.group + '</div></div>'
+        + '<svg viewBox="0 0 100 16" preserveAspectRatio="none"><rect x="0" y="5" width="' + t + '" height="6" rx="3" fill="var(--second)" opacity=".35"/>'
+        + '<rect x="0" y="5" width="' + e + '" height="6" rx="3" fill="' + (flag ? 'var(--red)' : (DARK ? 'var(--accent)' : 'var(--ink)')) + '"/></svg>'
+        + '<div class="num">' + money(r.value) + '</div></div>';
+    }).join('') || '<div class="meta" style="padding:12px">No rows</div>';
+  }
+
+  // 3 · Fallback rows when there's no data (local preview, misconfigured panel).
+  function synth(){
+    var out = [];
+    for (var i = 0; i < 14; i++) out.push({label: 'Item ' + (1001 + i), group: ['North', 'South', 'West'][i % 3], elapsed: 2 + (i * 7) % 19, remaining: 14 - (i * 5) % 17, value: 9000 + (i * 7919) % 90000});
+    return out;
+  }
+
+  var st = {cfg: null, data: null, unsub: null};
+  function recompute(){
+    var c = st.cfg || {}, d = st.data;
+    if (d && c.label && d[c.label] && d[c.label].length) {
+      var col = function(k){ return (c[k] && d[c[k]]) || []; };
+      var L = col('label'), G = col('group'), E = col('elapsed'), R = col('remaining'), V = col('value');
+      render(L.map(function(l, i){ return {label: String(l), group: G[i] != null ? String(G[i]) : '', elapsed: num(E[i]), remaining: num(R[i]), value: num(V[i])}; }));
+      return;
+    }
+    render(synth());
+  }
+  function onConfig(cfg){
+    st.cfg = cfg || {};
+    if (st.unsub) { st.unsub(); st.unsub = null; }
+    if (cfg && cfg.source) st.unsub = client.elements.subscribeToElementData(cfg.source, function(d){ st.data = d; recompute(); });
+    recompute();
+  }
+
+  if (DEMO) {
+    fetch('demo.json').then(function(r){ return r.json(); }).then(render).catch(function(){ render(synth()); });
+  } else if (client) {
+    client.config.subscribe(onConfig);
+    try { onConfig(client.config.get()); } catch (e) {}   // init can land before the first subscribe callback
+  } else {
+    render(synth());
+  }
+  // Sigma sizes the frame after first paint: redraw on every resize.
+  new ResizeObserver(function(){ if (last) render(last); }).observe(document.getElementById('wrap'));
+})();
+</script>
+</body>
+</html>
